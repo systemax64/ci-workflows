@@ -33,11 +33,11 @@ on:
         required: true
     secrets:
       aws_access_key_id:
-        required: false
+        required: true
       aws_secret_access_key:
-        required: false
+        required: true
       aws_region:
-        required: false
+        required: true
 
 jobs:
   init:
