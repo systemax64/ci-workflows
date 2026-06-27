@@ -1,0 +1,195 @@
+inputs:
+  gh_repo:
+    type: string
+    required: true
+  gh_token:
+    type: string
+    required: true
+  ecr_registry:
+    type: string
+    required: true
+  ecr_registry_username:
+    type: string
+    required: true
+  ecr_registry_password:
+    type: string
+    required: true
+  ecr_repo:
+    type: string
+    required: true
+  ssm_prefix:
+    type: string
+    required: true
+  ref_name:
+    type: string
+    required: true
+  environment:
+    type: string
+    required: true
+  secrets_json:
+    type: string
+    required: true
+
+outputs:
+  new_image_tag:
+    value: ${{ steps.new_image_tag.outputs.new_image_tag }}
+  ghcr_image:
+    value: ${{ steps.basic.outputs.ghcr_image_name }}:${{ github.run_id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Basic data
+      id: basic
+      shell: bash
+      run: |
+        echo "ghcr_image_name=$(tr '[:upper:]' '[:lower:]' <<< ghcr.io/${{ inputs.gh_repo }})" >> $GITHUB_OUTPUT
+        echo "REF_SLUG=$(echo ${{ inputs.ref_name }} | sed 's/[^.0-9a-zA-Z]/-/g')" >> $GITHUB_ENV
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Check if secret files composite action exists
+      id: secret_files_check
+      shell: bash
+      run: |
+        if [ -d ./.github/workflows/secret-files ]
+        then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create secret files for the docker build
+      id: secret_files
+      if: steps.secret_files_check.outputs.exists == 'true'
+      uses: ./.github/workflows/secret-files
+      with:
+        secrets_json: ${{ inputs.secrets_json }}
+
+    - name: Generate new image tag
+      id: new_image_tag
+      if: inputs.environment != 'None'
+      shell: bash
+      run: |
+        if git show-ref -q --verify 'refs/tags/${{ inputs.ref_name }}' # ref is a Tag
+        then
+          echo new_image_tag=${{ env.REF_SLUG }} >> $GITHUB_OUTPUT
+        elif git show-ref -q --verify 'refs/heads/${{ inputs.ref_name }}' # ref is a Branch
+        then
+          echo new_image_tag=${{ env.REF_SLUG }}-${{ github.run_number }} >> $GITHUB_OUTPUT
+        else
+          echo "ERROR: Invalid git ref"
+          exit 1
+        fi
+
+    - name: Build .env file
+      if: inputs.environment != 'None'
+      shell: bash
+      run: |
+        # Extract required keys from .env.example (comma-separated)
+        REQUIRED_ENV_KEYS=$(awk -F '=' '!/^#/ && NF > 0 { sep = (NR > 1 ? "," : ""); printf "%s%s", sep, $1 }' .env.example)
+
+        if [ -z "$REQUIRED_ENV_KEYS" ]; then
+            echo "ERROR: No keys found in .env.example"
+            exit 1
+        fi
+
+        # Fetch parameters JSON from AWS SSM
+        ENV_PARAMS=$(aws ssm get-parameter --with-decryption \
+            --name ${{ inputs.ssm_prefix }}/env_params \
+            --query 'Parameter.Value' --output text)
+
+        if [ -z "$ENV_PARAMS" ]; then
+            echo "ERROR: SSM parameter is empty or could not be fetched"
+            exit 1
+        fi
+
+        # Validate JSON
+        DEFINED_ENV_KEYS=$(jq '.' <<< "$ENV_PARAMS")
+        if [ -z "$DEFINED_ENV_KEYS" ]; then
+            echo "ERROR: SSM parameter is not valid JSON"
+            exit 1
+        fi
+
+        # Build sorted lists for comparison
+        REQUIRED_KEYS_SORTED=$(echo "$REQUIRED_ENV_KEYS" | tr ',' '\n' | sort -u)
+        SSM_KEYS_SORTED=$(jq -r 'keys[]' <<< "$DEFINED_ENV_KEYS" | sort -u)
+
+        # Check 1: Required keys missing from SSM
+        MISSING_KEYS=$(comm -23 <(echo "$REQUIRED_KEYS_SORTED") <(echo "$SSM_KEYS_SORTED"))
+
+        # Check 2: Extra keys in SSM not present in .env.example
+        EXTRA_KEYS=$(comm -13 <(echo "$REQUIRED_KEYS_SORTED") <(echo "$SSM_KEYS_SORTED"))
+
+        HAS_ERROR=0
+
+        if [ -n "$MISSING_KEYS" ]; then
+            echo "ERROR: The following keys are required by .env.example but missing in SSM:"
+            echo "$MISSING_KEYS" | sed 's/^/  - /'
+            HAS_ERROR=1
+        fi
+
+        if [ -n "$EXTRA_KEYS" ]; then
+            echo "ERROR: The following keys exist in SSM but are not declared in .env.example:"
+            echo "$EXTRA_KEYS" | sed 's/^/  - /'
+            HAS_ERROR=1
+        fi
+
+        if [ "$HAS_ERROR" -eq 1 ]; then
+            exit 1
+        fi
+
+        # All checks passed — build the .env file
+        IFS=','
+        for ENV_KEY in $REQUIRED_ENV_KEYS
+        do
+            ENV_VALUE=$(jq -r --arg k "$ENV_KEY" '.[$k]' <<< "$DEFINED_ENV_KEYS")
+            echo "$ENV_KEY=$ENV_VALUE" >> .env
+        done
+        unset IFS
+
+        # Export a short hash of the .env for use as a cache/version key
+        echo "ENV_HASH=$(md5sum .env | cut -c 1-5)" >> $GITHUB_ENV
+
+        echo ".env file built successfully with $(wc -l < .env) variables"
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      env:
+        GITHUB_TOKEN: ${{ inputs.gh_token }}
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ env.GITHUB_TOKEN }}
+
+    - name: Login to ECR
+      if: inputs.environment != 'None'
+      uses: docker/login-action@v3
+      env:
+        ECR_REGISTRY_PASSWORD: ${{ inputs.ecr_registry_password }}
+      with:
+        registry: ${{ inputs.ecr_registry }}
+        username: ${{ inputs.ecr_registry_username }}
+        password: ${{ env.ECR_REGISTRY_PASSWORD }}
+
+    - name: Build and push image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        tags: |
+          ${{ steps.basic.outputs.ghcr_image_name }}:${{ github.run_id }}
+          ${{ inputs.ecr_registry }}/${{ inputs.ecr_repo}}:${{ steps.new_image_tag.outputs.new_image_tag }}
+        cache-from: |
+          type=registry,ref=${{ steps.basic.outputs.ghcr_image_name }}:cache-${{ env.REF_SLUG }}
+          type=registry,ref=${{ steps.basic.outputs.ghcr_image_name }}:cache-main
+        cache-to: type=registry,ref=${{ steps.basic.outputs.ghcr_image_name }}:cache-${{ env.REF_SLUG }},mode=max
+        provenance: false
+        push: true
+        build-args: |
+          SENTRY_RELEASE=${{ inputs.ref_name }}
+          ENV_HASH=${{ env.ENV_HASH }}
+        secret-files: |
+          .env=./.env
+          ${{ steps.secret_files_check.outputs.exists == 'true' && steps.secret_files.outputs.secret_files || '' }}

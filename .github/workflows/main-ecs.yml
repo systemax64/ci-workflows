@@ -1,0 +1,189 @@
+name: Deploy app to ECS
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        type: string
+        required: true
+      platform:
+        type: string
+        required: true
+      environment:
+        type: string
+        required: true
+        default: 'None'
+      app:
+        type: string
+        required: true
+      enable_maintenance_mode:
+        type: boolean
+        required: false
+        default: false
+      ctnr_command:
+        type: string
+        required: true
+    # secrets:
+    #   token:
+    #     required: true
+
+jobs:
+  init:
+    if: github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.action == 'released' ||
+      github.event.action == 'published' && github.event.release.prerelease
+    runs-on: ubuntu-latest
+
+    outputs:
+      AWS_CREDS_PREFIX: ${{ steps.aws_creds.outputs.prefix }}
+      ECS_CLUSTER: ${{ steps.target.outputs.cluster }}
+      ECS_SERVICE: ${{ steps.target.outputs.service }}
+      ECR_REGISTRY: ${{ steps.target.outputs.ecr_registry }}
+      ECR_REPO: ${{ steps.target.outputs.ecr_repo }}
+      SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
+
+    steps:
+      - name: Set platform upper
+        id: platform
+        run: |
+          echo "name_upper=$(echo '${{ inputs.platform }}' | tr '[:lower:]' '[:upper:]')" >> $GITHUB_OUTPUT
+
+      - name: Set aws credentials prefix
+        id: aws_creds
+        env:
+          aws_secret_access_key: ${{ secrets[format('{0}_AWS_KEY', steps.platform.outputs.name_upper)] }}
+        run: |
+          if [[ -z "${{ vars[format('{0}_AWS_KEY_ID', steps.platform.outputs.name_upper)] }}" || -z "${{ vars[format('{0}_AWS_REGION', steps.platform.outputs.name_upper)] }}" || -z "$aws_secret_access_key" ]]
+          then
+            echo "AWS keys are not set, falling to default credentials"
+            echo "prefix=DEFAULT" >> $GITHUB_OUTPUT
+          else
+            echo "AWS keys are set, using environment specific credentials"
+            echo "prefix=${{ steps.platform.outputs.name_upper }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', steps.aws_creds.outputs.prefix)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', steps.aws_creds.outputs.prefix)] }}
+          aws-region: ${{ vars[format('{0}_AWS_REGION', steps.aws_creds.outputs.prefix)] }}
+          mask-aws-account-id: 'no'
+
+      - name: Set target vars
+        id: target
+        run: |
+          APP_INFO=$(aws ssm get-parameter --with-decryption --name /${{ inputs.project }}/${{ inputs.platform }}/${{ inputs.environment }}/${{ inputs.app }}/info --query 'Parameter.Value' --output text)
+
+          if [ -z "$APP_INFO" ]; then
+              echo "ERROR: SSM parameter is empty or could not be fetched"
+              exit 1
+          fi
+
+          ECS_CLUSTER=$(echo $APP_INFO | jq -r '.ecs_cluster')
+          ECS_SERVICE=$(echo $APP_INFO | jq -r '.ecs_service')
+          ECR_REPOSITORY_URL=$(echo $APP_INFO | jq -r '.ecr_repository_url')
+          ECR_REGISTRY=$(echo $ECR_REPOSITORY_URL | cut -d'/' -f1)
+          ECR_REPO=$(echo $ECR_REPOSITORY_URL | cut -d'/' -f2)
+          APP_SSM_PREFIX=$(echo $APP_INFO | jq -r '.app_ssm_prefix')
+
+          echo "cluster=$ECS_CLUSTER" >> $GITHUB_OUTPUT
+          echo "service=$ECS_SERVICE" >> $GITHUB_OUTPUT
+          echo "ecr_registry=$ECR_REGISTRY" >> $GITHUB_OUTPUT
+          echo "ecr_repo=$ECR_REPO" >> $GITHUB_OUTPUT
+          echo "ssm_prefix=/$APP_SSM_PREFIX/${{ inputs.environment }}/${{ inputs.app }}" >> $GITHUB_OUTPUT
+
+      - name: Print deployment information
+        run: |
+          echo Deploying to "${{ inputs.environment }}" on platform "${{ inputs.platform }}"
+          echo AWS keys prefix: "${{ steps.aws_creds.outputs.prefix }}"
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - init
+
+    permissions:
+        contents: read
+        packages: write
+        attestations: write
+        id-token: write
+
+    steps:
+      - name: Checkout application repository
+        uses: actions/checkout@v4
+
+      - name: Checkout reuseable pipeline workflows
+        uses: actions/checkout@v4
+        with:
+          repository: Solar-Auto/pipeline-workflows
+          ref: main
+          path: .github/pipeline-workflows
+          ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
+          persist-credentials: false
+
+      # TODO: Use secrets:inherit to pass secrets to the reusable workflow instead of setting them here
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+
+      - name: Run build action
+        id: build
+        uses: ./.github/pipeline-workflows/composite/build
+        with:
+          gh_repo: ${{ github.repository }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+          ecr_registry: ${{ needs.init.outputs.ECR_REGISTRY }}
+          ecr_registry_username: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          ecr_registry_password: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          ecr_repo: ${{ needs.init.outputs.ECR_REPO }}
+          ssm_prefix: ${{ needs.init.outputs.SSM_PREFIX }}
+          ref_name: ${{ github.ref_name }}
+          environment: ${{ inputs.environment }}
+          secrets_json: ${{ toJson(secrets) }}
+    outputs:
+      new_image_tag: ${{ steps.build.outputs.new_image_tag }}
+      # ghcr_image: ${{ steps.build.outputs.ghcr_image }}
+
+  deploy:
+    if: inputs.environment != 'None'
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - init
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+
+    steps:
+      - name: Install boto3
+        run: |
+          python -m pip install --upgrade boto3
+
+      - name: Checkout reuseable pipeline workflows
+        uses: actions/checkout@v4
+        with:
+          repository: Solar-Auto/pipeline-workflows
+          ref: main
+          path: .github/pipeline-workflows
+          ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+
+      - name: Run deploy action
+        uses: ./.github/pipeline-workflows/composite/deploy
+        with:
+          ecs_cluster: ${{ needs.init.outputs.ECS_CLUSTER }}
+          ecs_service: ${{ needs.init.outputs.ECS_SERVICE }}
+          image_uri: "${{ needs.init.outputs.ECR_REGISTRY }}/${{ needs.init.outputs.ECR_REPO }}:${{ needs.build.outputs.new_image_tag }}"
+          ctnr_command: ${{ inputs.ctnr_command }}
+          enable_maintenance_mode: ${{ inputs.enable_maintenance_mode }}

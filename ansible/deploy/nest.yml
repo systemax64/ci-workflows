@@ -1,0 +1,45 @@
+# Inputs:
+#   app: The name of the application to deploy (e.g., "my-nest-app").
+#   app_user: The user on the remote server that owns the application files (e.g., "www-data").
+#   artifact: The path to the build artifact (e.g., "/tmp/artifact/my-nest-app-build.tar.gz").
+---
+- name: Deploy nest
+  hosts: all
+  become: true
+  become_user: "{{ app_user }}"
+
+  vars:
+    app_directory: "/var/www/{{ app }}"
+
+  tasks:
+    - name: Delete node_modules
+      ansible.builtin.file:
+        path: "{{ app_directory }}/node_modules"
+        state: absent
+
+    - name: Delete dist directory
+      ansible.builtin.file:
+        path: "{{ app_directory }}/dist"
+        state: absent
+
+    - name: Upload, decompress and extract project on remote server
+      ansible.builtin.unarchive:
+        src: "{{ artifact }}"
+        dest: "{{ app_directory }}"
+        include:
+          - node_modules
+          - dist
+          - .env
+
+    - name: Delete existing pm2 processes if running
+      ansible.builtin.command: "/usr/local/lib/npm/bin/pm2 delete {{ app }}"
+      changed_when: false
+      ignore_errors: true
+      args:
+        chdir: "{{ app_directory }}"
+
+    - name: Start app with PM2
+      ansible.builtin.command: "/usr/local/lib/npm/bin/pm2 start dist/main.js --name {{ app }}"
+      changed_when: false
+      args:
+        chdir: "{{ app_directory }}"
