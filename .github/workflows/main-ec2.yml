@@ -31,13 +31,13 @@ on:
       framework:
         type: string
         required: true
-    secrets:
-      aws_access_key_id:
-        required: true
-      aws_secret_access_key:
-        required: true
       aws_region:
+        type: string
         required: true
+      aws_role_to_assume:
+        type: string
+        required: true
+
 
 jobs:
   init:
@@ -50,12 +50,12 @@ jobs:
     outputs:
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
     steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ secrets.aws_access_key_id }}
-          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
-          aws-region: ${{ secrets.aws_region }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
           mask-aws-account-id: 'no'
 
       - name: Set target vars
@@ -94,13 +94,13 @@ jobs:
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
-      # TODO: Use secrets:inherit to pass secrets to the reusable workflow instead of setting them here
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ secrets.aws_access_key_id }}
-          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
-          aws-region: ${{ secrets.aws_region }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: 'no'
 
       - name: Build .env file
         id: env
@@ -165,12 +165,13 @@ jobs:
           name: ${{ inputs.app }}-build
           path: /tmp/artifact
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ secrets.aws_access_key_id }}
-          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
-          aws-region: ${{ secrets.aws_region }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: 'no'
 
       - name: Generate inventory
         working-directory: ./.github/ci-workflows/ansible
@@ -179,7 +180,7 @@ jobs:
           PLATFORM: ${{ inputs.platform }}
           ENVIRONMENT: ${{ inputs.environment }}
           APP_NAME: ${{ inputs.app }}
-          AWS_DEFAULT_REGION: ${{ secrets.aws_region }}
+          AWS_DEFAULT_REGION: ${{ inputs.aws_region }}
         run: |
           chmod +x ./generate-inventory.sh
           ./generate-inventory.sh
