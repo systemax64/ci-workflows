@@ -31,6 +31,13 @@ on:
       framework:
         type: string
         required: true
+    secrets:
+      aws_access_key_id:
+        required: true
+      aws_secret_access_key:
+        required: true
+      aws_region:
+        required: true
 
 jobs:
   init:
@@ -39,35 +46,16 @@ jobs:
       github.event.action == 'released' ||
       github.event.action == 'published' && github.event.release.prerelease
     runs-on: ubuntu-latest
+    environment: ${{ inputs.platform }}
     outputs:
-      AWS_CREDS_PREFIX: ${{ steps.aws_creds.outputs.prefix }}
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
     steps:
-      - name: Set platform upper
-        id: platform
-        run: |
-          echo "name_upper=$(echo '${{ inputs.platform }}' | tr '[:lower:]' '[:upper:]')" >> $GITHUB_OUTPUT
-
-      - name: Set aws credentials prefix
-        id: aws_creds
-        env:
-          aws_secret_access_key: ${{ secrets[format('{0}_AWS_KEY', steps.platform.outputs.name_upper)] }}
-        run: |
-          if [[ -z "${{ vars[format('{0}_AWS_KEY_ID', steps.platform.outputs.name_upper)] }}" || -z "${{ vars[format('{0}_AWS_REGION', steps.platform.outputs.name_upper)] }}" || -z "$aws_secret_access_key" ]]
-          then
-            echo "AWS keys are not set, falling to default credentials"
-            echo "prefix=DEFAULT" >> $GITHUB_OUTPUT
-          else
-            echo "AWS keys are set, using environment specific credentials"
-            echo "prefix=${{ steps.platform.outputs.name_upper }}" >> $GITHUB_OUTPUT
-          fi
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', steps.aws_creds.outputs.prefix)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', steps.aws_creds.outputs.prefix)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', steps.aws_creds.outputs.prefix)] }}
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: ${{ secrets.aws_region }}
           mask-aws-account-id: 'no'
 
       - name: Set target vars
@@ -87,6 +75,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    environment: ${{ inputs.platform }}
     needs:
       - init
     permissions:
@@ -96,12 +85,12 @@ jobs:
       - name: Checkout application repository
         uses: actions/checkout@v4
 
-      - name: Checkout reuseable pipeline workflows
+      - name: Checkout reusable pipeline workflows
         uses: actions/checkout@v4
         with:
-          repository: Solar-Auto/pipeline-workflows
+          repository: systemax64/ci-workflows
           ref: main
-          path: .github/pipeline-workflows
+          path: .github/ci-workflows
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
@@ -109,9 +98,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: ${{ secrets.aws_region }}
 
       - name: Build .env file
         id: env
@@ -147,11 +136,12 @@ jobs:
           if-no-files-found: error
 
   deploy:
+    if: ${{ inputs.environment != 'None' }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.platform }}
     needs:
       - init
       - build
-    if: ${{ inputs.environment != 'None' }}
     permissions:
       contents: read
       id-token: write
@@ -160,12 +150,12 @@ jobs:
         run: |
           pipx inject ansible-core botocore boto3 
 
-      - name: Checkout reuseable pipeline workflows
+      - name: Checkout reusable pipeline workflows
         uses: actions/checkout@v4
         with:
-          repository: Solar-Auto/pipeline-workflows
+          repository: systemax64/ci-workflows
           ref: main
-          path: .github/pipeline-workflows
+          path: .github/ci-workflows
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
@@ -178,24 +168,24 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          aws-access-key-id: ${{ secrets.aws_access_key_id }}
+          aws-secret-access-key: ${{ secrets.aws_secret_access_key }}
+          aws-region: ${{ secrets.aws_region }}
 
       - name: Generate inventory
-        working-directory: ./.github/pipeline-workflows/ansible
+        working-directory: ./.github/ci-workflows/ansible
         env:
           PROJECT: ${{ inputs.project }}
           PLATFORM: ${{ inputs.platform }}
           ENVIRONMENT: ${{ inputs.environment }}
           APP_NAME: ${{ inputs.app }}
-          AWS_DEFAULT_REGION: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          AWS_DEFAULT_REGION: ${{ secrets.aws_region }}
         run: |
           chmod +x ./generate-inventory.sh
           ./generate-inventory.sh
 
       - name: Run deploy ansible playbook
-        working-directory: ./.github/pipeline-workflows/ansible
+        working-directory: ./.github/ci-workflows/ansible
         run: |
           ansible-playbook --user admin -i inventories/ \
           -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
