@@ -39,7 +39,7 @@ on:
         type: string
         required: false
         default: "{}"
-      framework:
+      target_framework:
         type: string
         required: true
 
@@ -182,4 +182,4 @@ jobs:
           -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
           -e "app=${{ inputs.app }}" \
           -e "app_user=${{ inputs.app_user }}" \
-          deploy/${{ inputs.framework }}.yml
+          deploy/${{ inputs.target_framework }}.yml
