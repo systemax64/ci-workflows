@@ -1,0 +1,57 @@
+---
+name: Step to build the application for deployment to EC2
+description: This step builds the application for deployment to EC2. It supports different build tools, such as npm, and can be extended to support other build tools in the future.
+
+inputs:
+  build_tool:
+    description: The build tool to use for building the application (e.g., 'npm', 'maven', etc.). Currently, only 'npm' is supported.
+    required: true
+  build_args:
+    description: "Optional build arguments to pass to the build tool (e.g., node_version)."
+    required: false
+    default: "{}"
+
+runs:
+  using: composite
+  steps:
+    - name: Validate build input and output build arguments
+      id: prepare
+      shell: bash
+      run: |
+        if [[ "${{ inputs.build_tool }}" != "npm" ]]; then
+          echo "Error: Unsupported build tool '${{ inputs.build_tool }}'."
+          exit 1
+        fi
+
+        BUILD_ARGS='${{ inputs.build_args }}'
+
+        # Validate JSON format
+        if ! echo "$BUILD_ARGS" | jq -e . > /dev/null 2>&1; then
+          echo "::warning::Invalid JSON provided for build_args input: $BUILD_ARGS"
+          exit 0
+        fi
+
+        if [[ "${{ inputs.build_tool }}" == "npm" ]]; then
+          NODE_VERSION=$(echo $BUILD_ARGS | jq -r '.node_version')
+          if [[ -z "$NODE_VERSION" ]]; then
+            echo "Error: Node.js version must be specified when using 'npm' as the build tool."
+            exit 1
+          else:
+            echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+    - name: Setup node
+      if: ${{ inputs.build_tool == 'npm' }}
+      shell: bash
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.prepare.outputs.node_version }}
+    - name: Install node modules
+      if: ${{ inputs.build_tool == 'npm' }}
+      shell: bash
+      run: npm install
+    - name: Build
+      shell: bash
+      if: ${{ inputs.build_tool == 'npm' }}
+      run: npm run build

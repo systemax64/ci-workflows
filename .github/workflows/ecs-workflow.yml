@@ -23,20 +23,18 @@ on:
       ctnr_command:
         type: string
         required: true
-    # secrets:
-    #   token:
-    #     required: true
+      aws_region:
+        type: string
+        required: true
+      aws_role_to_assume:
+        type: string
+        required: true
 
 jobs:
   init:
-    if: github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.action == 'released' ||
-      github.event.action == 'published' && github.event.release.prerelease
     runs-on: ubuntu-latest
 
     outputs:
-      AWS_CREDS_PREFIX: ${{ steps.aws_creds.outputs.prefix }}
       ECS_CLUSTER: ${{ steps.target.outputs.cluster }}
       ECS_SERVICE: ${{ steps.target.outputs.service }}
       ECR_REGISTRY: ${{ steps.target.outputs.ecr_registry }}
@@ -44,31 +42,12 @@ jobs:
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
 
     steps:
-      - name: Set platform upper
-        id: platform
-        run: |
-          echo "name_upper=$(echo '${{ inputs.platform }}' | tr '[:lower:]' '[:upper:]')" >> $GITHUB_OUTPUT
-
-      - name: Set aws credentials prefix
-        id: aws_creds
-        env:
-          aws_secret_access_key: ${{ secrets[format('{0}_AWS_KEY', steps.platform.outputs.name_upper)] }}
-        run: |
-          if [[ -z "${{ vars[format('{0}_AWS_KEY_ID', steps.platform.outputs.name_upper)] }}" || -z "${{ vars[format('{0}_AWS_REGION', steps.platform.outputs.name_upper)] }}" || -z "$aws_secret_access_key" ]]
-          then
-            echo "AWS keys are not set, falling to default credentials"
-            echo "prefix=DEFAULT" >> $GITHUB_OUTPUT
-          else
-            echo "AWS keys are set, using environment specific credentials"
-            echo "prefix=${{ steps.platform.outputs.name_upper }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', steps.aws_creds.outputs.prefix)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', steps.aws_creds.outputs.prefix)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', steps.aws_creds.outputs.prefix)] }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
           mask-aws-account-id: 'no'
 
       - name: Set target vars
@@ -123,17 +102,17 @@ jobs:
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
-      # TODO: Use secrets:inherit to pass secrets to the reusable workflow instead of setting them here
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: 'no'
 
-      - name: Run build action
+      - name: Build app
         id: build
-        uses: ./.github/pipeline-workflows/composite/build
+        uses: ./.github/pipeline-workflows/composite/build-ecs
         with:
           gh_repo: ${{ github.repository }}
           gh_token: ${{ secrets.GITHUB_TOKEN }}
@@ -172,12 +151,13 @@ jobs:
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@v1.7.0
         with:
-          aws-access-key-id: ${{ vars[format('{0}_AWS_KEY_ID', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_KEY', needs.init.outputs.AWS_CREDS_PREFIX)] }}
-          aws-region: ${{ vars[format('{0}_AWS_REGION', needs.init.outputs.AWS_CREDS_PREFIX)] }}
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
+          mask-aws-account-id: 'no'
 
       - name: Run deploy action
         uses: ./.github/pipeline-workflows/composite/deploy

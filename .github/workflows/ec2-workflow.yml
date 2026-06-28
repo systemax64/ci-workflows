@@ -24,29 +24,28 @@ on:
         type: boolean
         required: false
         default: false
-      build_tool:
-        type: string
-        required: true
-        default: ''
-      framework:
-        type: string
-        required: true
       aws_region:
         type: string
         required: true
       aws_role_to_assume:
         type: string
         required: true
-
+      build_tool:
+        type: string
+        required: true
+        default: ''
+      build_args:
+        description: "Optional build arguments to pass to the build tool (e.g., node_version)."
+        type: string
+        required: false
+        default: "{}"
+      framework:
+        type: string
+        required: true
 
 jobs:
   init:
-    if: github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.action == 'released' ||
-      github.event.action == 'published' && github.event.release.prerelease
     runs-on: ubuntu-latest
-    environment: ${{ inputs.platform }}
     outputs:
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
     steps:
@@ -56,9 +55,8 @@ jobs:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ inputs.aws_region }}
-          mask-aws-account-id: 'no'
 
-      - name: Set target vars
+      - name: Output target vars
         id: target
         run: |
           APP_INFO=$(aws ssm get-parameter --with-decryption --name /${{ inputs.project }}/${{ inputs.platform }}/${{ inputs.environment }}/${{ inputs.app }}/info --query 'Parameter.Value' --output text)
@@ -75,7 +73,6 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.platform }}
     needs:
       - init
     permissions:
@@ -100,25 +97,19 @@ jobs:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ inputs.aws_region }}
-          mask-aws-account-id: 'no'
 
       - name: Build .env file
-        id: env
-        uses: ./.github/pipeline-workflows/composite/env
-        with:
-          ssm_prefix: ${{ needs.init.outputs.SSM_PREFIX }}
+        run: .github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
-      - name: Setup node
-        if: ${{ inputs.build_tool == 'npm' }}
-        uses: actions/setup-node@v4
+      - name: Build app
+        uses: ./.github/pipeline-workflows/composite/build-ec2
         with:
-          node-version: 18
-      - name: Install node modules
-        if: ${{ inputs.build_tool == 'npm' }}
-        run: npm install
-      - name: Build
-        if: ${{ inputs.build_tool == 'npm' }}
-        run: npm run build
+          build_tool: ${{ inputs.build_tool }}
+          build_args: ${{ inputs.build_args }}
+
+      - name: Export a short hash of the .env for use as a cache/version key
+        run: |
+          echo "ENV_HASH=$(md5sum .env | cut -c 1-5)" >> $GITHUB_ENV
 
       - name: Create deployment archive
         run: |
@@ -171,7 +162,6 @@ jobs:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
           aws-region: ${{ inputs.aws_region }}
-          mask-aws-account-id: 'no'
 
       - name: Generate inventory
         working-directory: ./.github/ci-workflows/ansible
