@@ -189,7 +189,7 @@ jobs:
         working-directory: ./.github/ci-workflows/ansible
         run: |
           ansible-playbook --user admin -i inventories/ \
-          -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
+          -e "artifact=/tmp/${{ inputs.app }}-build.tar.gz" \
           -e "app=${{ inputs.app }}" \
           -e "app_user=${{ inputs.app_user }}" \
           deploy/${{ inputs.target_framework }}.yml
