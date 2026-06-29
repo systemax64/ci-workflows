@@ -164,7 +164,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.app }}-build
-          path: /tmp/${{ inputs.app }}-build.tar.gz
+          path: /tmp/artifact 
 
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@v1.7.0
@@ -189,7 +189,7 @@ jobs:
         working-directory: ./.github/ci-workflows/ansible
         run: |
           ansible-playbook --user admin -i inventories/ \
-          -e "artifact=/tmp/${{ inputs.app }}-build.tar.gz" \
+          -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
           -e "app=${{ inputs.app }}" \
           -e "app_user=${{ inputs.app_user }}" \
           deploy/${{ inputs.target_framework }}.yml
