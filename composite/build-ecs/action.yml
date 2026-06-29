@@ -86,7 +86,7 @@ runs:
     - name: Build .env file
       if: inputs.environment != 'None'
       shell: bash
-      run: .github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
+      run: .github/workflows/scripts/build-env.sh ${{ inputs.ssm_prefix }}
 
     - name: Export a short hash of the .env for use as a cache/version key
       if: inputs.environment != 'None'

@@ -76,7 +76,6 @@ jobs:
       - name: Print deployment information
         run: |
           echo Deploying to "${{ inputs.environment }}" on platform "${{ inputs.platform }}"
-          echo AWS keys prefix: "${{ steps.aws_creds.outputs.prefix }}"
 
   build:
     runs-on: ubuntu-latest
