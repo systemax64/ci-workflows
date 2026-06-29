@@ -126,6 +126,14 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  # oss-security:
+  #   needs:
+  #     - build
+  #   uses: ./.github/workflows/oss-security.yml
+  #   with:
+  #     sec_tool: ${{ inputs.build_tool }}
+  #     artifact: ${{ inputs.app }}-build
+
   deploy:
     if: ${{ inputs.environment != 'None' }}
     runs-on: ubuntu-latest

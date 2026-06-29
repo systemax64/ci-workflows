@@ -1,0 +1,134 @@
+name: Scan application for known security vulnerabilities
+
+on:
+  workflow_call:
+    inputs:
+      sec_tool:
+        description: "The security tool to use for scanning (e.g., npm, pip, etc.)."
+        type: string
+      ghcr_image:
+        description: "The GitHub Container Registry image to run sec tools within and for scanning with trivy (e.g., ghcr.io/username/repo:tag)."
+        type: string
+      artifact:
+        description: "The name of the artifact to download and scan (e.g., myapp-build)."
+        type: string
+      container_scan:
+        description: "Whether to perform a container scan using trivy"
+        type: boolean
+        required: false
+
+jobs:
+  oss-security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate input
+        env:
+          SEC_TOOL: ${{ inputs.sec_tool }}
+          GHCR_IMAGE: ${{ inputs.ghcr_image }}
+          ARTIFACT: ${{ inputs.artifact }}
+          CONTAINER_SCAN: ${{ inputs.container_scan }}
+        run: |
+          set -euo pipefail
+
+          errors=0
+
+          SUPPORTED_TOOLS=("npm" "pip")
+
+          if [[ -n "${GHCR_IMAGE}" && -n "${ARTIFACT}" ]]; then
+            echo "::error::Both 'ghcr_image' and 'artifact' are provided. Please provide only one."
+            errors=1
+          fi
+
+          if [[ -z "${GHCR_IMAGE}" && -z "${ARTIFACT}" ]]; then
+            echo "::error::Neither 'ghcr_image' nor 'artifact' is provided. Please provide exactly one."
+            errors=1
+          fi
+
+          if [[ -z "${SEC_TOOL}" ]]; then
+            echo "::error::'sec_tool' input is required (e.g., npm, pip)."
+            errors=1
+          else
+            case "${SEC_TOOL}" in
+              npm|pip) echo "Security tool '${SEC_TOOL}' is supported." ;;
+              *)
+                echo "::error::Unsupported 'sec_tool' value: '${SEC_TOOL}'. Supported: ${SUPPORTED_TOOLS[*]}."
+                errors=1
+                ;;
+            esac
+          fi
+
+          if [[ "${CONTAINER_SCAN}" == "true" && -z "${GHCR_IMAGE}" ]]; then
+            echo "::error::'container_scan' is enabled but 'ghcr_image' is not provided."
+            errors=1
+          fi
+
+          if [[ "${errors}" -ne 0 ]]; then
+            echo "::error::Input validation failed."
+            exit 1
+          fi
+
+          echo "Input validation passed."
+
+      - name: Resolve sec tool command
+        id: cmd
+        env:
+          SEC_TOOL: ${{ inputs.sec_tool }}
+        run: |
+          set -euo pipefail
+          case "${SEC_TOOL}" in
+            npm) echo "sec_tool_cmd=npm audit" >> "$GITHUB_OUTPUT" ;;
+            pip) echo "sec_tool_cmd=pip-audit" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Run sec tool within container
+        if: ${{ inputs.ghcr_image != '' }}
+        env:
+          GHCR_IMAGE: ${{ inputs.ghcr_image }}
+          SEC_TOOL_CMD: ${{ steps.cmd.outputs.sec_tool_cmd }}
+        run: |
+          set -euo pipefail
+          # Note: do NOT use -it in CI (no TTY allocated)
+          docker run --rm "${GHCR_IMAGE}" /bin/bash -lc "${SEC_TOOL_CMD}"
+
+      - name: Download build artifact
+        if: ${{ inputs.artifact != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: /tmp/artifact
+
+      - name: Run sec tool against artifact
+        if: ${{ inputs.artifact != '' }}
+        env:
+          ARTIFACT_DIR: /tmp/artifact
+          SEC_TOOL_CMD: ${{ steps.cmd.outputs.sec_tool_cmd }}
+        run: |
+          set -euo pipefail
+
+          # Resolve the archive within the downloaded artifact directory.
+          # The inner filename is decoupled from the artifact name, so we
+          # locate it by extension rather than hardcoding it.
+          archive="$(find "${ARTIFACT_DIR}" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | head -n1)"
+
+          if [[ -z "${archive}" ]]; then
+            echo "::error::No .tar.gz/.tgz archive found in '${ARTIFACT_DIR}'."
+            exit 1
+          fi
+
+          workdir="$(mktemp -d)"
+          echo "Extracting ${archive} into ${workdir}"
+          tar -xzf "${archive}" -C "${workdir}"
+
+          cd "${workdir}"
+          echo "Running: ${SEC_TOOL_CMD}"
+          eval "${SEC_TOOL_CMD}"
+
+      - name: Trivy container scan
+        if: ${{ inputs.container_scan == true }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ inputs.ghcr_image }}
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
