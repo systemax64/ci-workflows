@@ -121,7 +121,7 @@ jobs:
             -czf /tmp/${{ inputs.app }}-build.tar.gz .
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.app }}-build
           path: /tmp/${{ inputs.app }}-build.tar.gz
@@ -162,7 +162,7 @@ jobs:
           persist-credentials: false
 
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.app }}-build
           path: /tmp/artifact 
