@@ -113,21 +113,20 @@ jobs:
         run: |
           echo "ENV_HASH=$(md5sum .env | cut -c 1-5)" >> $GITHUB_ENV
 
-      - name: Create deployment archive
+      - name: Create artifact archive
         run: |
           tar \
             --exclude='./.git' \
             --exclude='./.github/ci-workflows/.git' \
             -czf /tmp/${{ inputs.app }}-build.tar.gz .
 
-      - name: Upload build artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.app }}-build
           path: /tmp/${{ inputs.app }}-build.tar.gz
+          archive: false
           retention-days: 1
           if-no-files-found: error
-          archive: false
 
   # oss-security:
   #   needs:
@@ -161,11 +160,11 @@ jobs:
           ssh-key: ${{ secrets.PIPELINE_WORKFLOWS_SSH_KEY }}
           persist-credentials: false
 
-      - name: Download build artifact
+      - name: Download artifact
         uses: actions/download-artifact@v8
         with:
-          name: ${{ inputs.app }}-build
-          path: /tmp/artifact 
+          name: ${{ inputs.app }}-build.tar.gz
+          path: /tmp/artifact
 
       - name: "[Debug] Inspect artifact"
         run: |
