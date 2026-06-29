@@ -110,15 +110,12 @@ jobs:
           mask-aws-account-id: 'no'
 
       - name: Build .env file
+        id: env
         run: |
           chmod +x ./.github/ci-workflows/.github/workflows/scripts/build-env.sh
           ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
-      - name: Build app
-        uses: ./.github/ci-workflows/composite/build-ec2
-        with:
-          build_tool: ${{ inputs.build_tool }}
-          build_args: ${{ inputs.build_args }}
+          echo "hash=$(md5sum .env | cut -c 1-5)" >> $GITHUB_OUTPUT
 
       - name: Build app
         id: build
@@ -134,6 +131,7 @@ jobs:
           ref_name: ${{ github.ref_name }}
           environment: ${{ inputs.environment }}
           secrets_json: ${{ toJson(secrets) }}
+          env_hash: ${{ steps.env.outputs.hash }}
     outputs:
       new_image_tag: ${{ steps.build.outputs.new_image_tag }}
       # ghcr_image: ${{ steps.build.outputs.ghcr_image }}

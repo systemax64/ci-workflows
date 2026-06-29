@@ -29,6 +29,9 @@ inputs:
   secrets_json:
     type: string
     required: true
+  env_hash:
+    description: A short hash of the .env file to use as a cache/version key for the docker build
+    type: string
 
 outputs:
   new_image_tag:
@@ -118,7 +121,7 @@ runs:
         push: true
         build-args: |
           SENTRY_RELEASE=${{ inputs.ref_name }}
-          ENV_HASH=${{ env.ENV_HASH }}
+          ENV_HASH=${{ inputs.env_hash }}
         secret-files: |
           .env=./.env
           ${{ steps.secret_files_check.outputs.exists == 'true' && steps.secret_files.outputs.secret_files || '' }}
