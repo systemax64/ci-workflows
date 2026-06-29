@@ -118,7 +118,7 @@ jobs:
           tar \
             --exclude='./.git' \
             --exclude='./.github/ci-workflows/.git' \
-            -czf /tmp/app-build.tar.gz .
+            -czf /tmp/${{ inputs.app }}-build.tar.gz .
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -164,7 +164,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.app }}-build
-          path: /tmp/artifact
+          path: /tmp/${{ inputs.app }}-build.tar.gz
 
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@v1.7.0
