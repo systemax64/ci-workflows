@@ -33,7 +33,7 @@ jobs:
 
           errors=0
 
-          SUPPORTED_TOOLS=("npm" "pip")
+          SUPPORTED_TOOLS=("npm" "pip" "composer")
 
           if [[ -n "${GHCR_IMAGE}" && -n "${ARTIFACT}" ]]; then
             echo "::error::Both 'ghcr_image' and 'artifact' are provided. Please provide only one."
@@ -50,7 +50,15 @@ jobs:
             errors=1
           else
             case "${SEC_TOOL}" in
-              npm|pip) echo "Security tool '${SEC_TOOL}' is supported." ;;
+              npm)
+                echo "Security tool '${SEC_TOOL}' (javascript) is supported."
+                ;;
+              pip)
+                echo "Security tool '${SEC_TOOL}' (python) is supported."
+                ;;
+              composer)
+                echo "Security tool '${SEC_TOOL}' (php) is supported."
+                ;;
               *)
                 echo "::error::Unsupported 'sec_tool' value: '${SEC_TOOL}'. Supported: ${SUPPORTED_TOOLS[*]}."
                 errors=1
@@ -79,6 +87,7 @@ jobs:
           case "${SEC_TOOL}" in
             npm) echo "sec_tool_cmd=npm audit" >> "$GITHUB_OUTPUT" ;;
             pip) echo "sec_tool_cmd=pip-audit" >> "$GITHUB_OUTPUT" ;;
+            composer) echo "sec_tool_cmd=composer audit" >> "$GITHUB_OUTPUT" ;;
           esac
 
       - name: Run sec tool within container

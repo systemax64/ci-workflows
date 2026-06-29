@@ -82,7 +82,7 @@ jobs:
       - name: Checkout application repository
         uses: actions/checkout@v4
 
-      - name: Checkout reusable pipeline workflows
+      - name: Checkout reusable ci workflows
         uses: actions/checkout@v4
         with:
           repository: systemax64/ci-workflows
@@ -99,10 +99,10 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Build .env file
-        run: .github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
+        run: .github/ci-workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
       - name: Build app
-        uses: ./.github/pipeline-workflows/composite/build-ec2
+        uses: ./.github/ci-workflows/composite/build-ec2
         with:
           build_tool: ${{ inputs.build_tool }}
           build_args: ${{ inputs.build_args }}
@@ -115,7 +115,7 @@ jobs:
         run: |
           tar \
             --exclude='./.git' \
-            --exclude='./.github/pipeline-workflows/.git' \
+            --exclude='./.github/ci-workflows/.git' \
             -czf /tmp/app-build.tar.gz .
 
       - name: Upload build artifact
@@ -129,7 +129,7 @@ jobs:
   # oss-security:
   #   needs:
   #     - build
-  #   uses: ./.github/workflows/oss-security.yml
+  #   uses: ./.github/ci-workflows/oss-security.yml
   #   with:
   #     sec_tool: ${{ inputs.build_tool }}
   #     artifact: ${{ inputs.app }}-build
@@ -149,7 +149,7 @@ jobs:
         run: |
           pipx inject ansible-core botocore boto3 
 
-      - name: Checkout reusable pipeline workflows
+      - name: Checkout reusable ci workflows
         uses: actions/checkout@v4
         with:
           repository: systemax64/ci-workflows
