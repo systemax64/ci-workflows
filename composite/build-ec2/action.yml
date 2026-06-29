@@ -36,14 +36,17 @@ runs:
           if [[ -z "$NODE_VERSION" ]]; then
             echo "Error: Node.js version must be specified when using 'npm' as the build tool."
             exit 1
-          else:
+          else
+            echo "[DEBUG] Resolved Node.js version: $NODE_VERSION"
             echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
           fi
         fi
 
+        echo "Build tool and arguments validated successfully."
+
     - name: Setup node
       if: ${{ inputs.build_tool == 'npm' }}
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: ${{ steps.prepare.outputs.node_version }}
     - name: Install node modules
