@@ -99,7 +99,9 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Build .env file
-        run: ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
+        run: 
+          chmod +x ./.github/ci-workflows/.github/workflows/scripts/build-env.sh
+          ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
       - name: Build app
         uses: ./.github/ci-workflows/composite/build-ec2
