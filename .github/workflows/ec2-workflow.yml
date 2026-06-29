@@ -127,6 +127,7 @@ jobs:
           path: /tmp/${{ inputs.app }}-build.tar.gz
           retention-days: 1
           if-no-files-found: error
+          archive: false
 
   # oss-security:
   #   needs:
