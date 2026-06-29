@@ -43,7 +43,6 @@ runs:
 
     - name: Setup node
       if: ${{ inputs.build_tool == 'npm' }}
-      shell: bash
       uses: actions/setup-node@v4
       with:
         node-version: ${{ steps.prepare.outputs.node_version }}
