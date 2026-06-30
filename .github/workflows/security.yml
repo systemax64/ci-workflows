@@ -169,7 +169,7 @@ jobs:
 
           archive=$ARTIFACT_DIR/${{ inputs.artifact_name }}
 
-          if [[ -f "${archive}" ]]; then
+          if [[ ! -f "${archive}" ]]; then
             echo "::error::${{ inputs.artifact_name }} not found in '${ARTIFACT_DIR}'."
             exit 1
           fi
