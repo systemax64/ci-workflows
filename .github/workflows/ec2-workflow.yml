@@ -128,13 +128,14 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # oss-security:
-  #   needs:
-  #     - build
-  #   uses: ./.github/ci-workflows/oss-security.yml
-  #   with:
-  #     sec_tool: ${{ inputs.build_tool }}
-  #     artifact: ${{ inputs.app }}-build
+  oss-security:
+    needs:
+      - build
+    name: security
+    uses: ./.github/workflows/security.yml
+    with:
+      sec_tool: ${{ inputs.build_tool }}
+      artifact_name: ${{ inputs.app }}-build.tar.gz
 
   deploy:
     if: ${{ inputs.environment != 'None' }}
@@ -143,6 +144,7 @@ jobs:
     needs:
       - init
       - build
+      - oss-security
     permissions:
       contents: read
       id-token: write
@@ -165,17 +167,6 @@ jobs:
         with:
           name: ${{ inputs.app }}-build.tar.gz
           path: /tmp/artifact
-
-      - name: "[Debug] Inspect artifact"
-        run: |
-          ARTIFACT="/tmp/artifact/${{ inputs.app }}-build.tar.gz"
-          ls -la "$ARTIFACT"
-          echo "=== file type ==="
-          file "$ARTIFACT"
-          echo "=== magic bytes ==="
-          xxd "$ARTIFACT" | head -2
-          echo "=== try gzip list ==="
-          tar -tzf "$ARTIFACT" | head -20 || echo "TAR FAILED ON RUNNER TOO"
 
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@v1.7.0

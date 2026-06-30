@@ -1,0 +1,207 @@
+name: Scan application for known security vulnerabilities
+
+on:
+  workflow_call:
+    inputs:
+      sec_tool:
+        description: "The security tool to use for scanning (e.g., npm, pip, etc.)."
+        type: string
+      ghcr_image:
+        description: "The GitHub Container Registry image to run sec tools within and for scanning with trivy (e.g., ghcr.io/username/repo:tag)."
+        type: string
+      artifact_name:
+        description: "The name of the artifact to download and scan (e.g., myapp-build)."
+        type: string
+      container_scan:
+        description: "Whether to perform a container scan using trivy"
+        type: boolean
+        required: false
+      ignore_vulns:
+        description: "If true, vulnerability findings won't fail the workflow."
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  oss:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Validate input
+        env:
+          SEC_TOOL: ${{ inputs.sec_tool }}
+          GHCR_IMAGE: ${{ inputs.ghcr_image }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+          CONTAINER_SCAN: ${{ inputs.container_scan }}
+        run: |
+          set -euo pipefail
+
+          errors=0
+
+          SUPPORTED_TOOLS=("npm" "pip" "composer")
+
+          if [[ -n "${GHCR_IMAGE}" && -n "${ARTIFACT_NAME}" ]]; then
+            echo "::error::Both 'ghcr_image' and 'artifact_name' are provided. Please provide only one."
+            errors=1
+          fi
+
+          if [[ -z "${GHCR_IMAGE}" && -z "${ARTIFACT_NAME}" ]]; then
+            echo "::error::Neither 'ghcr_image' nor 'artifact_name' is provided. Please provide exactly one."
+            errors=1
+          fi
+
+          if [[ -z "${SEC_TOOL}" ]]; then
+            echo "::error::'sec_tool' input is required (e.g., npm, pip)."
+            errors=1
+          else
+            case "${SEC_TOOL}" in
+              npm)
+                echo "Security tool '${SEC_TOOL}' (javascript) is supported."
+                ;;
+              pip)
+                echo "Security tool '${SEC_TOOL}' (python) is supported."
+                ;;
+              composer)
+                echo "Security tool '${SEC_TOOL}' (php) is supported."
+                ;;
+              *)
+                echo "::error::Unsupported 'sec_tool' value: '${SEC_TOOL}'. Supported: ${SUPPORTED_TOOLS[*]}."
+                errors=1
+                ;;
+            esac
+          fi
+
+          if [[ "${CONTAINER_SCAN}" == "true" && -z "${GHCR_IMAGE}" ]]; then
+            echo "::error::'container_scan' is enabled but 'ghcr_image' is not provided."
+            errors=1
+          fi
+
+          if [[ "${errors}" -ne 0 ]]; then
+            echo "::error::Input validation failed."
+            exit 1
+          fi
+
+          echo "Input validation passed."
+
+      - name: Generate sec tool script
+        id: cmd
+        env:
+          SEC_TOOL: ${{ inputs.sec_tool }}
+        run: |
+          set -euo pipefail
+
+          script_path="$(mktemp --suffix=.sh)"
+
+          case "${SEC_TOOL}" in
+          npm)
+              cat > "${script_path}" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          npm audit --audit-level=critical
+          EOF
+              ;;
+          pip)
+              cat > "${script_path}" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          pip-audit
+          EOF
+              ;;
+          composer)
+              cat > "${script_path}" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          # Print full human-readable audit table (goes to stderr; don't abort on non-zero exit)
+          composer audit || true
+
+          # Gate on critical vulnerabilities only
+          set +e
+          CRITICAL_VULNS_COUNT=$(composer audit --format=json | jq '[.advisories[][] | select(.severity == "critical")] | length')
+          set -e
+
+          if [[ ${CRITICAL_VULNS_COUNT:-0} -gt 0 ]];
+          then
+                  echo "Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
+                  exit 1
+          else
+                  echo "No critical vulnerabilities found"
+          fi
+          EOF
+              ;;
+          esac
+
+          chmod +x "${script_path}"
+          echo "Generated script at ${script_path}:"
+          echo "----------------------------------------"
+          cat "${script_path}"
+          echo "----------------------------------------"
+
+          echo "script_path=${script_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        if: ${{ inputs.ghcr_image != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run sec tool within container
+        if: ${{ inputs.ghcr_image != '' }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
+        env:
+          GHCR_IMAGE: ${{ inputs.ghcr_image }}
+          SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
+        run: |
+          set -euo pipefail
+          docker run --rm -i "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}"
+
+      - name: Download artifact
+        if: ${{ inputs.artifact_name != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: /tmp/artifact
+
+      - name: Run sec tool against artifact
+        if: ${{ inputs.artifact_name != '' }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
+        env:
+          ARTIFACT_DIR: /tmp/artifact
+          SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
+        run: |
+          set -euo pipefail
+
+          archive=$ARTIFACT_DIR/${{ inputs.artifact_name }}
+
+          if [[ ! -f "${archive}" ]]; then
+            echo "::error::${{ inputs.artifact_name }} not found in '${ARTIFACT_DIR}'."
+            exit 1
+          fi
+
+          workdir="$(mktemp -d)"
+          echo "Extracting ${archive} into ${workdir}"
+          tar -xzf "${archive}" -C "${workdir}"
+
+          cd "${workdir}"
+          echo "Running generated script: ${SCRIPT_PATH}"
+          bash "${SCRIPT_PATH}"
+
+      - name: Trivy container scan
+        if: ${{ inputs.container_scan == true }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ inputs.ghcr_image }}
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}

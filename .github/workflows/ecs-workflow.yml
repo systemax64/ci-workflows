@@ -23,6 +23,14 @@ on:
       ctnr_command:
         type: string
         required: true
+      sec_tool:
+        type: string
+        required: true
+      ignore_vulns:
+        description: "If true, vulnerability findings won't fail the workflow."
+        type: boolean
+        required: false
+        default: false
       aws_region:
         type: string
         required: true
@@ -134,14 +142,29 @@ jobs:
           env_hash: ${{ steps.env.outputs.hash }}
     outputs:
       new_image_tag: ${{ steps.build.outputs.new_image_tag }}
-      # ghcr_image: ${{ steps.build.outputs.ghcr_image }}
+      ghcr_image: ${{ steps.build.outputs.ghcr_image }}
+
+  oss-security:
+    needs:
+      - build
+    name: security
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    uses: ./.github/workflows/security.yml
+    with:
+      sec_tool: ${{ inputs.sec_tool }}
+      ghcr_image: ${{ needs.build.outputs.ghcr_image }}
+      ignore_vulns: ${{ inputs.ignore_vulns }}
 
   deploy:
     if: inputs.environment != 'None'
     runs-on: ubuntu-latest
     needs:
-      - build
       - init
+      - build
+      - oss-security
     concurrency:
       group: deploy-${{ inputs.environment }}
 
