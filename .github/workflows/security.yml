@@ -20,6 +20,9 @@ on:
 jobs:
   oss:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
 
     steps:
       - name: Validate input
@@ -136,6 +139,14 @@ jobs:
 
           echo "script_path=${script_path}" >> "$GITHUB_OUTPUT"
 
+      - name: Log in to GHCR
+        if: ${{ inputs.ghcr_image != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run sec tool within container
         if: ${{ inputs.ghcr_image != '' }}
         env:
@@ -190,3 +201,6 @@ jobs:
           format: table
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
