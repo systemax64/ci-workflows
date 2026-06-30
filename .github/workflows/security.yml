@@ -198,6 +198,7 @@ jobs:
 
       - name: Run sec tool against artifact
         if: ${{ inputs.artifact_name != '' }}
+        # TODO: Get rid of continue-on-error and instead use a conditional to fail the job only if ignore_vulns is false and the sec tool fails
         continue-on-error: ${{ inputs.ignore_vulns }}
         env:
           ARTIFACT_DIR: /tmp/artifact
