@@ -227,6 +227,8 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.cmd.outputs.audit_report_dirpath }}/audit-report.html
+          archive: false
+          retention-days: 7
           if-no-files-found: error
 
       - name: Trivy container scan
