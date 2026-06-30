@@ -93,15 +93,30 @@ jobs:
         run: |
           set -euo pipefail
 
+          AUDIT_REPORT_DIRPATH="$(mktemp -d)"
+          AUDIT_GENERATED=false
+
           script_path="$(mktemp --suffix=.sh)"
 
           case "${SEC_TOOL}" in
           npm)
+              AUDIT_GENERATED=true
               cat > "${script_path}" <<'EOF'
           #!/usr/bin/env bash
           set -euo pipefail
 
-          npm audit --audit-level=critical
+          npm audit --json > audit.json || true
+          cat audit.json | npx audit-export --path "$AUDIT_REPORT_DIRPATH/audit-report.html"
+
+          CRITICAL_VULNS_COUNT=$(jq '.metadata.vulnerabilities.critical' audit.json)
+
+          if [[ ${CRITICAL_VULNS_COUNT:-0} -gt 0 ]];
+          then
+                  echo "Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
+                  exit 1
+          else
+                  echo "No critical vulnerabilities found"
+          fi
           EOF
               ;;
           pip)
@@ -143,6 +158,8 @@ jobs:
           echo "----------------------------------------"
 
           echo "script_path=${script_path}" >> "$GITHUB_OUTPUT"
+          echo "audit_report_dirpath=${AUDIT_REPORT_DIRPATH}" >> "$GITHUB_OUTPUT"
+          echo "audit_generated=${AUDIT_GENERATED}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         if: ${{ inputs.ghcr_image != '' }}
@@ -158,9 +175,14 @@ jobs:
         env:
           GHCR_IMAGE: ${{ inputs.ghcr_image }}
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
+          AUDIT_REPORT_DIRPATH: ${{ steps.cmd.outputs.audit_report_dirpath }}
         run: |
           set -euo pipefail
-          docker run --rm -i "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}"
+
+          docker run --rm -i \
+            -e AUDIT_REPORT_DIRPATH="$AUDIT_REPORT_DIRPATH" \
+            -v "$AUDIT_REPORT_DIRPATH":"$AUDIT_REPORT_DIRPATH" \
+            "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}"
 
       - name: Download artifact
         if: ${{ inputs.artifact_name != '' }}
@@ -175,6 +197,7 @@ jobs:
         env:
           ARTIFACT_DIR: /tmp/artifact
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
+          AUDIT_REPORT_DIRPATH: ${{ steps.cmd.outputs.audit_report_dirpath }}
         run: |
           set -euo pipefail
 
@@ -192,6 +215,13 @@ jobs:
           cd "${workdir}"
           echo "Running generated script: ${SCRIPT_PATH}"
           bash "${SCRIPT_PATH}"
+
+      - name: Upload audit report
+        if: ${{ steps.cmd.outputs.audit_generated == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.cmd.outputs.audit_report_dirpath }}/audit-report.html
+          if-no-files-found: error
 
       - name: Trivy container scan
         if: ${{ inputs.container_scan == true }}
