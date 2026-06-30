@@ -108,11 +108,16 @@ jobs:
           npm audit --json > audit.json || true
           cat audit.json | npx audit-export --path "$AUDIT_REPORT_DIRPATH/audit-report.html"
 
+          if [[ ! -s "$AUDIT_REPORT_DIRPATH/audit-report.html" ]]; then
+            echo "::error::Audit report was not generated at $AUDIT_REPORT_DIRPATH/audit-report.html"
+            exit 1
+          fi
+
           CRITICAL_VULNS_COUNT=$(jq '.metadata.vulnerabilities.critical' audit.json)
 
           if [[ ${CRITICAL_VULNS_COUNT:-0} -gt 0 ]];
           then
-                  echo "Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
+                  echo "::error::Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
                   exit 1
           else
                   echo "No critical vulnerabilities found"
@@ -217,7 +222,7 @@ jobs:
           bash "${SCRIPT_PATH}"
 
       - name: Upload audit report
-        if: ${{ steps.cmd.outputs.audit_generated == 'true' }}
+        if: ${{ always() && steps.cmd.outputs.audit_generated == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.cmd.outputs.audit_report_dirpath }}/audit-report.html
