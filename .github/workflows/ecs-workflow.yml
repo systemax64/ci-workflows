@@ -142,7 +142,7 @@ jobs:
   oss-security:
     needs:
       - build
-    uses: ./.github/ci-workflows/oss-security.yml
+    uses: ./.github/workflows/oss-security.yml
     with:
       sec_tool: ${{ inputs.sec_tool }}
       ghcr_image: ${{ needs.build.outputs.ghcr_image }}
