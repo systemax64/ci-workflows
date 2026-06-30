@@ -131,7 +131,8 @@ jobs:
   oss-security:
     needs:
       - build
-    uses: ./.github/ci-workflows/oss-security.yml
+    name: security
+    uses: ./.github/workflows/security.yml
     with:
       sec_tool: ${{ inputs.build_tool }}
       artifact_name: ${{ inputs.app }}-build.tar.gz
@@ -143,6 +144,7 @@ jobs:
     needs:
       - init
       - build
+      - oss-security
     permissions:
       contents: read
       id-token: write
