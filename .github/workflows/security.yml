@@ -147,7 +147,7 @@ jobs:
 
           if [[ ${CRITICAL_VULNS_COUNT:-0} -gt 0 ]];
           then
-                  echo "Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
+                  echo "::error::Found $CRITICAL_VULNS_COUNT vulnerabilities with a severity of critical"
                   exit 1
           else
                   echo "No critical vulnerabilities found"
