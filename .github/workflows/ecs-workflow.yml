@@ -137,7 +137,7 @@ jobs:
           env_hash: ${{ steps.env.outputs.hash }}
     outputs:
       new_image_tag: ${{ steps.build.outputs.new_image_tag }}
-      # ghcr_image: ${{ steps.build.outputs.ghcr_image }}
+      ghcr_image: ${{ steps.build.outputs.ghcr_image }}
 
   oss-security:
     needs:
@@ -145,7 +145,7 @@ jobs:
     uses: ./.github/ci-workflows/oss-security.yml
     with:
       sec_tool: ${{ inputs.sec_tool }}
-      ghcr_image: ${{ steps.build.outputs.ghcr_image }}
+      ghcr_image: ${{ needs.build.outputs.ghcr_image }}
 
   deploy:
     if: inputs.environment != 'None'
