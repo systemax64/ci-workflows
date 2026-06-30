@@ -26,6 +26,11 @@ on:
       sec_tool:
         type: string
         required: true
+      ignore_vulns:
+        description: "If true, vulnerability findings won't fail the workflow."
+        type: boolean
+        required: false
+        default: false
       aws_region:
         type: string
         required: true
@@ -151,6 +156,7 @@ jobs:
     with:
       sec_tool: ${{ inputs.sec_tool }}
       ghcr_image: ${{ needs.build.outputs.ghcr_image }}
+      ignore_vulns: ${{ inputs.ignore_vulns }}
 
   deploy:
     if: inputs.environment != 'None'

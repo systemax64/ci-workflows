@@ -16,6 +16,11 @@ on:
         description: "Whether to perform a container scan using trivy"
         type: boolean
         required: false
+      ignore_vulns:
+        description: "If true, vulnerability findings won't fail the workflow."
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   oss:
@@ -149,19 +154,13 @@ jobs:
 
       - name: Run sec tool within container
         if: ${{ inputs.ghcr_image != '' }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
         env:
           GHCR_IMAGE: ${{ inputs.ghcr_image }}
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
         run: |
           set -euo pipefail
-          # Note: do NOT use -it in CI (no TTY allocated)
-          # Mount the generated script into the container and execute it with bash.
-          # Assumes the image provides bash (scripts use bash-only features),
-          # has the relevant package manager + jq (composer path), and a sensible WORKDIR.
-          docker run --rm \
-            -v "${SCRIPT_PATH}:/tmp/sec-scan.sh:ro" \
-            "${GHCR_IMAGE}" \
-            bash /tmp/sec-scan.sh      
+          docker run --rm -i "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}"
 
       - name: Download artifact
         if: ${{ inputs.artifact_name != '' }}
@@ -172,6 +171,7 @@ jobs:
 
       - name: Run sec tool against artifact
         if: ${{ inputs.artifact_name != '' }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
         env:
           ARTIFACT_DIR: /tmp/artifact
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
@@ -195,6 +195,7 @@ jobs:
 
       - name: Trivy container scan
         if: ${{ inputs.container_scan == true }}
+        continue-on-error: ${{ inputs.ignore_vulns }}
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ inputs.ghcr_image }}
