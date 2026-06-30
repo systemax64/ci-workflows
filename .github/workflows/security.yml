@@ -18,7 +18,7 @@ on:
         required: false
 
 jobs:
-  oss-security:
+  oss:
     runs-on: ubuntu-latest
 
     steps:
