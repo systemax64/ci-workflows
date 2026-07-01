@@ -18,7 +18,7 @@ runs:
       id: prepare
       shell: bash
       run: |
-        if [[ "${{ inputs.build_tool }}" != "npm" ]]; then
+        if [[ ! "${{ inputs.build_tool }}" =~ ^(npm|pip)$ ]]; then
           echo "Error: Unsupported build tool '${{ inputs.build_tool }}'."
           exit 1
         fi
@@ -34,11 +34,22 @@ runs:
         if [[ "${{ inputs.build_tool }}" == "npm" ]]; then
           NODE_VERSION=$(echo $BUILD_ARGS | jq -r '.node_version')
           if [[ -z "$NODE_VERSION" ]]; then
-            echo "Error: Node.js version must be specified when using 'npm' as the build tool."
-            exit 1
+            echo "::warning:: Node.js version not specified in build_args. Defaulting to the latest available version."
+            echo "node_version=''" >> $GITHUB_OUTPUT
           else
             echo "[DEBUG] Resolved Node.js version: $NODE_VERSION"
             echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
+          fi
+        fi
+
+        if [[ "${{ inputs.build_tool }}" == "pip" ]]; then
+          PYTHON_VERSION=$(echo $BUILD_ARGS | jq -r '.python_version')
+          if [[ -z "$PYTHON_VERSION" ]]; then
+            echo "::warning::Python version not specified in build_args. Defaulting to the latest available version."
+            echo "python_version=''" >> $GITHUB_OUTPUT
+          else
+            echo "[DEBUG] Resolved Python version: $PYTHON_VERSION"
+            echo "python_version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
           fi
         fi
 
@@ -57,3 +68,24 @@ runs:
       shell: bash
       if: ${{ inputs.build_tool == 'npm' }}
       run: npm run build
+
+    - name: Install python prerequisites
+      if: ${{ inputs.build_tool == 'pip' }}
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config default-libmysqlclient-dev build-essential
+    - name: Set up Python
+      if: ${{ inputs.build_tool == 'pip' }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ steps.prepare.outputs.python_version }}
+        cache: 'pip'
+    - name: Install python dependencies
+      if: ${{ inputs.build_tool == 'pip' }}
+      shell: bash
+      run: |
+        python -m venv .venv
+        source .venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt

@@ -42,6 +42,10 @@ on:
       target_framework:
         type: string
         required: true
+      runtime_commands:
+        description: "Optional runtime commands string separated by semicolons to execute on the server for starting app. Applicable to python/django."
+        type: string
+        required: false
       ignore_vulns:
         description: "If true, vulnerability findings won't fail the workflow."
         type: boolean
@@ -200,4 +204,5 @@ jobs:
           -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
           -e "app=${{ inputs.app }}" \
           -e "app_user=${{ inputs.app_user }}" \
+          -e "runtime_commands=${{ inputs.runtime_commands }}" \
           deploy/${{ inputs.target_framework }}.yml
