@@ -105,7 +105,11 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          npm audit --json > audit.json || true
+          set +e
+          npm audit --json > audit.json
+          EXIT_CODE=$?
+          set -e
+
           cat audit.json | npx audit-export --path "$AUDIT_REPORT_DIRPATH/audit-report.html"
 
           if [[ ! -s "$AUDIT_REPORT_DIRPATH/audit-report.html" ]]; then
@@ -131,7 +135,18 @@ jobs:
 
           source .venv/bin/activate
           pip install pip-audit
+
+          set +e
           pip-audit
+          EXIT_CODE=$?
+          set -e
+
+          if [[ ${EXIT_CODE} -ne 0 ]]; then
+            echo "::error::pip-audit found vulnerabilities (exit code: ${EXIT_CODE})"
+            exit 1
+          else
+            echo "No vulnerabilities found"
+          fi
           EOF
               ;;
           composer)
@@ -145,6 +160,7 @@ jobs:
           # Gate on critical vulnerabilities only
           set +e
           CRITICAL_VULNS_COUNT=$(composer audit --format=json | jq '[.advisories[][] | select(.severity == "critical")] | length')
+          EXIT_CODE=$?
           set -e
 
           if [[ ${CRITICAL_VULNS_COUNT:-0} -gt 0 ]];
@@ -178,18 +194,23 @@ jobs:
 
       - name: Run sec tool within container
         if: ${{ inputs.ghcr_image != '' }}
-        continue-on-error: ${{ inputs.ignore_vulns }}
         env:
           GHCR_IMAGE: ${{ inputs.ghcr_image }}
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
           AUDIT_REPORT_DIRPATH: ${{ steps.cmd.outputs.audit_report_dirpath }}
+          IGNORE_VULNS: ${{ inputs.ignore_vulns }}
         run: |
           set -euo pipefail
 
           docker run --rm -i \
             -e AUDIT_REPORT_DIRPATH="$AUDIT_REPORT_DIRPATH" \
             -v "$AUDIT_REPORT_DIRPATH":"$AUDIT_REPORT_DIRPATH" \
-            "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}"
+            "${GHCR_IMAGE}" bash -s < "${SCRIPT_PATH}" || {
+            if [[ "${IGNORE_VULNS}" != "true" ]]; then
+              exit 1
+            fi
+            echo "::warning::Vulnerabilities found but ignored (ignore_vulns=true)."
+          }
 
       - name: Download artifact
         if: ${{ inputs.artifact_name != '' }}
@@ -200,12 +221,11 @@ jobs:
 
       - name: Run sec tool against artifact
         if: ${{ inputs.artifact_name != '' }}
-        # TODO: Get rid of continue-on-error and instead use a conditional to fail the job only if ignore_vulns is false and the sec tool fails
-        continue-on-error: ${{ inputs.ignore_vulns }}
         env:
           ARTIFACT_DIR: /tmp/artifact
           SCRIPT_PATH: ${{ steps.cmd.outputs.script_path }}
           AUDIT_REPORT_DIRPATH: ${{ steps.cmd.outputs.audit_report_dirpath }}
+          IGNORE_VULNS: ${{ inputs.ignore_vulns }}
         run: |
           set -euo pipefail
 
@@ -222,7 +242,12 @@ jobs:
 
           cd "${workdir}"
           echo "Running generated script: ${SCRIPT_PATH}"
-          bash "${SCRIPT_PATH}"
+          bash "${SCRIPT_PATH}" || {
+            if [[ "${IGNORE_VULNS}" != "true" ]]; then
+              exit 1
+            fi
+            echo "::warning::Vulnerabilities found but ignored (ignore_vulns=true)."
+          }
 
       - name: Upload audit report
         if: ${{ always() && steps.cmd.outputs.audit_generated == 'true' }}
