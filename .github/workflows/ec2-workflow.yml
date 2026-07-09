@@ -51,6 +51,11 @@ on:
         type: boolean
         required: false
         default: false
+      build:
+        description: Run build job
+        type: boolean
+        required: false
+        default: true
 
 jobs:
   init:
@@ -82,6 +87,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    if: ${{ inputs.build }}
     needs:
       - init
     permissions:
