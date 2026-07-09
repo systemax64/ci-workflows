@@ -51,11 +51,6 @@ on:
         type: boolean
         required: false
         default: false
-      build:
-        description: Run build job
-        type: boolean
-        required: false
-        default: true
 
 jobs:
   init:
@@ -87,7 +82,6 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    if: ${{ inputs.build }}
     needs:
       - init
     permissions:
@@ -119,6 +113,7 @@ jobs:
           ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
       - name: Build app
+        if: ${{ inputs.build != 'pip' }}
         uses: ./.github/ci-workflows/composite/build-ec2
         with:
           build_tool: ${{ inputs.build_tool }}
