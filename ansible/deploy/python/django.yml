@@ -25,6 +25,8 @@
             src: "/tmp/{{ app }}-build.tar.gz"
             dest: "{{ app_dir }}"
             remote_src: true
+            exclude:
+              - ./.venv
       always:
         - name: Clean up uploaded archive
           ansible.builtin.file:
