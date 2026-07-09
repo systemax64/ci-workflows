@@ -35,7 +35,7 @@
       ansible.builtin.shell:
         cmd: |
           source .venv/bin/activate
-          python manage.py collectstatic --noinput
+          python3 manage.py collectstatic --noinput
       args:
         chdir: "{{ app_dir }}"
         executable: /bin/bash
@@ -46,7 +46,7 @@
       ansible.builtin.shell:
         cmd: |
           source .venv/bin/activate
-          python manage.py compress
+          python3 manage.py compress
       args:
         chdir: "{{ app_dir }}"
         executable: /bin/bash
@@ -64,7 +64,7 @@
       ansible.builtin.shell:
         cmd: |
           source .venv/bin/activate
-          python manage.py makemigrations
+          python3 manage.py makemigrations
       args:
         chdir: "{{ app_dir }}"
         executable: /bin/bash
@@ -74,7 +74,7 @@
       ansible.builtin.shell:
         cmd: |
           source .venv/bin/activate
-          python manage.py migrate
+          python3 manage.py migrate
       args:
         chdir: "{{ app_dir }}"
         executable: /bin/bash
