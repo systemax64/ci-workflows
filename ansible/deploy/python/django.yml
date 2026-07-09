@@ -39,12 +39,12 @@
       ansible.builtin.command: python3 -m venv venv
       args:
         chdir: "{{ app_dir }}"
-        creates: "{{ app_dir }}/venv"
+        creates: "{{ app_dir }}/.venv"
 
     - name: Install packages based on requirements.txt file
       ansible.builtin.pip:
         requirements: "{{ app_dir }}/requirements.txt"
-        virtualenv: "{{ app_dir }}/venv"
+        virtualenv: "{{ app_dir }}/.venv"
 
     - name: Collect static files
       ansible.builtin.shell:
