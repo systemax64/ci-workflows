@@ -51,6 +51,11 @@ on:
         type: boolean
         required: false
         default: false
+      build_step:
+        type: boolean
+        description: Whether to run build step in build job
+        required: false
+        default: true
 
 jobs:
   init:
@@ -113,7 +118,7 @@ jobs:
           ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
 
       - name: Build app
-        if: ${{ inputs.build != 'pip' }}
+        if: ${{ inputs.build_step }}
         uses: ./.github/ci-workflows/composite/build-ec2
         with:
           build_tool: ${{ inputs.build_tool }}
