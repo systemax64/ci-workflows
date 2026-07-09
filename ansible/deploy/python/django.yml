@@ -2,6 +2,7 @@
 #   app: The name of the application to deploy (e.g., "my-nest-app").
 #   app_user: The user on the remote server that owns the application files (e.g., "www-data").
 #   artifact: The path to the build artifact (e.g., "/tmp/artifact/my-nest-app-build.tar.gz").
+#   runtime_commands
 ---
 - name: Deploy django
   hosts: all
@@ -65,9 +66,8 @@
       register: migrate_result
       changed_when: "'No migrations to apply' not in migrate_result.stdout"
 
-    - name: Execute post-deploy commands
+    - name: Execute runtime commands on the server
       when: runtime_commands | default([]) | length > 0
-      ansible.builtin.command:
-        cmd: "{{ item }}"
-        chdir: "{{ app_dir }}"
-      loop: "{{ runtime_commands }}"
+      ansible.builtin.shell: "{{ item.cmd }}"
+      args: "{{ item.args | default({}) }}"
+      with_items: "{{ runtime_commands | split(';') }}"
