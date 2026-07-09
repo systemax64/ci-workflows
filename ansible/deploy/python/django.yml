@@ -3,16 +3,17 @@
 #   app_user: The user on the remote server that owns the application files (e.g., "www-data").
 #   artifact: The path to the build artifact (e.g., "/tmp/artifact/my-nest-app-build.tar.gz").
 ---
-- name: Deploy nest
+- name: Deploy django
   hosts: all
   become: true
   become_user: "{{ app_user }}"
 
   vars:
     app_dir: "/var/www/{{ app }}"
+    venv_python: "{{ app_dir }}/.venv/bin/python"
 
   tasks:
-    - name: Upload build artifact to remote server
+    - name: Upload build artifact
       block:
         - name: Copy archive to remote
           ansible.builtin.copy:
@@ -20,7 +21,7 @@
             dest: "/tmp/{{ app }}-build.tar.gz"
             mode: "0644"
 
-        - name: Decompress and extract project on remote server
+        - name: Extract project
           ansible.builtin.unarchive:
             src: "/tmp/{{ app }}-build.tar.gz"
             dest: "{{ app_dir }}"
@@ -33,73 +34,40 @@
             path: "/tmp/{{ app }}-build.tar.gz"
             state: absent
 
-    - name: Create virtualenv
-      become: true
-      become_user: "{{ app_user }}"
-      ansible.builtin.command: python3 -m venv venv
-      args:
-        chdir: "{{ app_dir }}"
-        creates: "{{ app_dir }}/.venv"
-
-    - name: Install packages based on requirements.txt file
+    - name: Install requirements (creates venv if missing)
       ansible.builtin.pip:
         requirements: "{{ app_dir }}/requirements.txt"
         virtualenv: "{{ app_dir }}/.venv"
+        virtualenv_command: python3 -m venv
 
     - name: Collect static files
-      ansible.builtin.shell:
-        cmd: |
-          source .venv/bin/activate
-          python3 manage.py collectstatic --noinput
-      args:
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} manage.py collectstatic --noinput"
         chdir: "{{ app_dir }}"
-        executable: /bin/bash
       register: static_collect_result
       changed_when: "'0 static files copied to' not in static_collect_result.stdout"
 
     - name: Compress static files
-      ansible.builtin.shell:
-        cmd: |
-          source .venv/bin/activate
-          python3 manage.py compress
-      args:
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} manage.py compress"
         chdir: "{{ app_dir }}"
-        executable: /bin/bash
-      changed_when: false
+      changed_when: true
 
     - name: Delete staticfiles directory
-      ansible.builtin.shell:
-        cmd: |
-          rm -rf staticfiles/
-      args:
-        chdir: "{{ app_dir }}"
-        removes: "{{ app_dir }}/staticfiles"
-
-    - name: Make migrations
-      ansible.builtin.shell:
-        cmd: |
-          source .venv/bin/activate
-          python3 manage.py makemigrations
-      args:
-        chdir: "{{ app_dir }}"
-        executable: /bin/bash
-      changed_when: false
+      ansible.builtin.file:
+        path: "{{ app_dir }}/staticfiles"
+        state: absent
 
     - name: Migrate database
-      ansible.builtin.shell:
-        cmd: |
-          source .venv/bin/activate
-          python3 manage.py migrate
-      args:
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} manage.py migrate --noinput"
         chdir: "{{ app_dir }}"
-        executable: /bin/bash
       register: migrate_result
       changed_when: "'No migrations to apply' not in migrate_result.stdout"
 
-    - name: Execute pre-configuration commands on the server
-      when:
-        - runtime_commands is defined
-        - runtime_commands | length > 0
-      ansible.builtin.shell: "{{ item.cmd }}"
-      args: "{{ item.args | default({}) }}"
-      with_items: "{{ runtime_commands | split(';') }}"
+    - name: Execute post-deploy commands
+      when: runtime_commands | default([]) | length > 0
+      ansible.builtin.command:
+        cmd: "{{ item }}"
+        chdir: "{{ app_dir }}"
+      loop: "{{ runtime_commands }}"
