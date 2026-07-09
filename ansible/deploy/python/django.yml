@@ -68,6 +68,5 @@
 
     - name: Execute runtime commands on the server
       when: runtime_commands | default([]) | length > 0
-      ansible.builtin.shell: "{{ item.cmd }}"
-      args: "{{ item.args | default({}) }}"
+      ansible.builtin.shell: "{{ item }}"
       with_items: "{{ runtime_commands | split(';') }}"
