@@ -66,7 +66,21 @@
       register: migrate_result
       changed_when: "'No migrations to apply' not in migrate_result.stdout"
 
+    - name: Build runtime command list
+      ansible.builtin.set_fact:
+        runtime_commands_list: >-
+          {{
+            runtime_commands
+            | default('')
+            | split(';')
+            | map('trim')
+            | map('regex_replace', '^sudo\\s+', '')
+            | reject('equalto', '')
+            | list
+          }}
+
     - name: Execute runtime commands on the server
-      when: runtime_commands | default([]) | length > 0
-      ansible.builtin.command: "{{ item }}"
-      with_items: "{{ runtime_commands | split(';') }}"
+      when: runtime_commands_list | length > 0
+      ansible.builtin.shell: "{{ item }}"
+      with_items: "{{ runtime_commands_list }}"
+      become_user: root
