@@ -12,6 +12,7 @@
   vars:
     app_dir: "/var/www/{{ app }}"
     venv_python: "{{ app_dir }}/.venv/bin/python"
+    ansible_remote_tmp: /tmp/.ansible/tmp
 
   tasks:
     - name: Upload build artifact
@@ -68,19 +69,11 @@
 
     - name: Build runtime command list
       ansible.builtin.set_fact:
-        runtime_commands_list: >-
-          {{
-            runtime_commands
-            | default('')
-            | split(';')
-            | map('trim')
-            | map('regex_replace', '^sudo\\s+', '')
-            | reject('equalto', '')
-            | list
-          }}
+        runtime_commands_list: "{{ runtime_commands | default('') | split(';') | map('trim') | map('regex_replace', '^sudo\\s+', '') | reject('equalto', '') | list }}"
 
     - name: Execute runtime commands on the server
       when: runtime_commands_list | length > 0
       ansible.builtin.shell: "{{ item }}"
-      with_items: "{{ runtime_commands_list }}"
-      become_user: admin
+      loop: "{{ runtime_commands_list }}"
+      become: true
+      become_user: root
