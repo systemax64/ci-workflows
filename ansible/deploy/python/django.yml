@@ -74,6 +74,8 @@
     - name: Execute runtime commands on the server
       when: runtime_commands_list | length > 0
       ansible.builtin.shell: "{{ item }}"
-      loop: "{{ runtime_commands_list }}"
+      with_items: "{{ runtime_commands_list }}"
+      loop_control:
+        label: "{{ item }}"
       become: true
       become_user: root
