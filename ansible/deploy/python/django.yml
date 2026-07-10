@@ -83,4 +83,4 @@
       when: runtime_commands_list | length > 0
       ansible.builtin.shell: "{{ item }}"
       with_items: "{{ runtime_commands_list }}"
-      become_user: "{{ ansible_user }}"
+      become_user: admin
