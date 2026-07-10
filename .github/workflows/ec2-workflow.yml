@@ -210,5 +210,5 @@ jobs:
           -e "artifact=/tmp/artifact/${{ inputs.app }}-build.tar.gz" \
           -e "app=${{ inputs.app }}" \
           -e "app_user=${{ inputs.app_user }}" \
-          -e "runtime_commands=${{ inputs.runtime_commands }}" \
+          -e "runtime_commands='${{ inputs.runtime_commands }}'" \
           deploy/${{ inputs.target_framework }}.yml
