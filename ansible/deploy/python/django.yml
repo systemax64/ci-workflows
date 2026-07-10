@@ -70,6 +70,10 @@
     - name: Build runtime command list
       ansible.builtin.set_fact:
         runtime_commands_list: "{{ runtime_commands | default('') | split(';') | map('trim') | map('regex_replace', '^sudo\\s+', '') | reject('equalto', '') | list }}"
+    
+    - name: "[DEBUG] Runtime commands list"
+      ansible.builtin.debug:
+        msg: "Runtime commands to execute: {{ runtime_commands_list }}"
 
     - name: Execute runtime commands on the server
       when: runtime_commands_list | length > 0
