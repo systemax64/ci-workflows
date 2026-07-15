@@ -253,11 +253,12 @@ jobs:
 
       - name: Upload audit report
         if: ${{ always() && steps.cmd.outputs.audit_generated == 'true' }}
+        continue-on-error: true  # To account for storage quota limit
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.cmd.outputs.audit_report_dirpath }}/audit-report.html
           archive: false
-          retention-days: 7
+          retention-days: 3
           if-no-files-found: error
 
       - name: Trivy container scan
