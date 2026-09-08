@@ -49,12 +49,6 @@
       register: static_collect_result
       changed_when: "'0 static files copied to' not in static_collect_result.stdout"
 
-    - name: Compress static files
-      ansible.builtin.command:
-        cmd: "{{ venv_python }} manage.py compress"
-        chdir: "{{ app_dir }}"
-      changed_when: true
-
     - name: Delete staticfiles directory
       ansible.builtin.file:
         path: "{{ app_dir }}/staticfiles"
