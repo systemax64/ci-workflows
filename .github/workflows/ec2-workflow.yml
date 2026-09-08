@@ -64,7 +64,7 @@ jobs:
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
     steps:
       - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
@@ -106,7 +106,7 @@ jobs:
           persist-credentials: false
 
       - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
@@ -185,7 +185,7 @@ jobs:
           path: /tmp/artifact
 
       - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@v1.7.0
+        uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
           role-to-assume: ${{ inputs.aws_role_to_assume }}
           role-session-name: GitHub_to_AWS_via_FederatedOIDC
