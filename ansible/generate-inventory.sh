@@ -16,9 +16,9 @@ PLATFORM_PARAM_PATH="/${PROJECT}/${PLATFORM}/info"
 echo "Fetching platform info from SSM: $PLATFORM_PARAM_PATH"
 platform_info=$(aws ssm get-parameter --name "$PLATFORM_PARAM_PATH" --query "Parameter.Value" --output text)
 
-SSM_BUCKET_NAME=$(echo "$platform_info" | jq -r '.s3.state_bucket // empty')
+SSM_BUCKET_NAME=$(echo "$platform_info" | jq -r '.metadata.s3_state_bucket // empty')
 if [[ -z "$SSM_BUCKET_NAME" ]]; then
-  echo "s3.state_bucket not found in $PLATFORM_PARAM_PATH" >&2
+  echo "metadata.s3_state_bucket not found in $PLATFORM_PARAM_PATH" >&2
   exit 1
 fi
 
