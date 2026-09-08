@@ -12,7 +12,7 @@ mkdir -p inventories
 INVENTORY_FILE="inventories/hosts.yml"
 
 # --- Platform info: SSM bucket name ---
-PLATFORM_PARAM_PATH="/${PROJECT}-${PLATFORM}/info"
+PLATFORM_PARAM_PATH="/${PROJECT}/${PLATFORM}/info"
 echo "Fetching platform info from SSM: $PLATFORM_PARAM_PATH"
 platform_info=$(aws ssm get-parameter --name "$PLATFORM_PARAM_PATH" --query "Parameter.Value" --output text)
 
