@@ -20,6 +20,11 @@ on:
         type: string
         description: The user on the remote server that owns the application files (e.g., "www-data").
         required: true
+      app_path:
+        description: "Path to the app within the repo (e.g. 'backend'). Defaults to repo root."
+        type: string
+        required: false
+        default: '.'
       enable_maintenance_mode:
         type: boolean
         required: false
@@ -116,9 +121,11 @@ jobs:
           aws-region: ${{ inputs.aws_region }}
 
       - name: Build .env file
+        working-directory: ${{ inputs.app_path }}
         run: |
-          chmod +x ./.github/ci-workflows/.github/workflows/scripts/build-env.sh
-          ./.github/ci-workflows/.github/workflows/scripts/build-env.sh ${{ needs.init.outputs.SSM_PREFIX }}
+          # NOTE: script lives at repo root, we run it from app_path
+          chmod +x "${{ github.workspace }}/.github/ci-workflows/.github/workflows/scripts/build-env.sh"
+          "${{ github.workspace }}/.github/ci-workflows/.github/workflows/scripts/build-env.sh" ${{ needs.init.outputs.SSM_PREFIX }}
 
       - name: Build app
         if: ${{ inputs.build_step }}
@@ -126,12 +133,15 @@ jobs:
         with:
           build_tool: ${{ inputs.build_tool }}
           build_args: ${{ inputs.build_args }}
+          working_directory: ${{ inputs.app_path }}
 
       - name: Export a short hash of the .env for use as a cache/version key
+        working-directory: ${{ inputs.app_path }}
         run: |
           echo "ENV_HASH=$(md5sum .env | cut -c 1-5)" >> $GITHUB_ENV
 
       - name: Create artifact archive
+        working-directory: ${{ inputs.app_path }}
         run: |
           tar \
             --exclude='./.git' \
