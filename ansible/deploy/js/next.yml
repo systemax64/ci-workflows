@@ -1,0 +1,59 @@
+---
+- name: Deploy Next.js
+  hosts: all
+  become: true
+  become_user: "{{ app_user }}"
+
+  vars:
+    app_directory: "/var/www/{{ app }}"
+
+  tasks:
+    - name: Delete node_modules
+      ansible.builtin.file:
+        path: "{{ app_directory }}/node_modules"
+        state: absent
+
+    - name: Delete .next directory
+      ansible.builtin.file:
+        path: "{{ app_directory }}/.next"
+        state: absent
+
+    - name: Upload build artifact to remote server
+      block:
+        - name: Copy archive to remote
+          ansible.builtin.copy:
+            src: "{{ artifact }}"
+            dest: "/tmp/{{ app }}-build.tar.gz"
+            mode: "0644"
+
+        - name: Decompress and extract project on remote server
+          ansible.builtin.unarchive:
+            src: "/tmp/{{ app }}-build.tar.gz"
+            dest: "{{ app_directory }}"
+            remote_src: true
+            include:
+              - ./node_modules
+              - ./.next
+              - ./public
+              - ./package.json
+              - ./next.config.js
+              - ./.env
+      always:
+        - name: Clean up uploaded archive
+          ansible.builtin.file:
+            path: "/tmp/{{ app }}-build.tar.gz"
+            state: absent
+
+    - name: Delete existing pm2 processes if running
+      ansible.builtin.command: "/usr/local/lib/npm/bin/pm2 delete {{ app }}"
+      changed_when: false
+      ignore_errors: true
+      args:
+        chdir: "{{ app_directory }}"
+
+    - name: Start app with PM2
+      ansible.builtin.command: >
+        /usr/local/lib/npm/bin/pm2 start npm --name {{ app }} -- start
+      changed_when: false
+      args:
+        chdir: "{{ app_directory }}"
