@@ -36,6 +36,7 @@
               - ./.next
               - ./public
               - ./package.json
+              - ./next.config.mjs
               - ./.env
       always:
         - name: Clean up uploaded archive
