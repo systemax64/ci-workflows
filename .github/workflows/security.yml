@@ -21,6 +21,24 @@ on:
         type: boolean
         required: false
         default: false
+      artifact_s3_bucket:
+        description: "Optional S3 bucket used when GitHub artifact download fails."
+        type: string
+        required: false
+        default: ''
+      artifact_s3_path:
+        description: "Directory in artifact_s3_bucket for fallback artifacts."
+        type: string
+        required: false
+        default: '/'
+      aws_region:
+        description: "AWS region for the S3 artifact fallback."
+        type: string
+        required: false
+      aws_role_to_assume:
+        description: "AWS role for the S3 artifact fallback."
+        type: string
+        required: false
 
 jobs:
   oss:
@@ -28,6 +46,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      id-token: write
 
     steps:
       - name: Validate input
@@ -214,12 +233,45 @@ jobs:
             echo "::warning::Vulnerabilities found but ignored (ignore_vulns=true)."
           }
 
+      - name: Configure AWS credentials for artifact fallback
+        if: ${{ inputs.artifact_s3_bucket != '' }}
+        uses: aws-actions/configure-aws-credentials@v6.2.4
+        with:
+          role-to-assume: ${{ inputs.aws_role_to_assume }}
+          role-session-name: GitHub_to_AWS_via_FederatedOIDC
+          aws-region: ${{ inputs.aws_region }}
+
       - name: Download artifact
+        id: download_artifact
+        continue-on-error: true
         if: ${{ inputs.artifact_name != '' }}
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact_name }}
           path: /tmp/artifact
+
+      - name: Download artifact from S3 fallback
+        if: ${{ inputs.artifact_name != '' && steps.download_artifact.outcome == 'failure' && inputs.artifact_s3_bucket != '' }}
+        env:
+          ARTIFACT_S3_BUCKET: ${{ inputs.artifact_s3_bucket }}
+          ARTIFACT_S3_PATH: ${{ inputs.artifact_s3_path }}
+          ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        run: |
+          set -euo pipefail
+          artifact_s3_path="${ARTIFACT_S3_PATH#/}"
+          artifact_s3_path="${artifact_s3_path%/}"
+          source="s3://${ARTIFACT_S3_BUCKET}/${ARTIFACT_NAME}"
+          if [[ -n "${artifact_s3_path}" ]]; then
+            source="s3://${ARTIFACT_S3_BUCKET}/${artifact_s3_path}/${ARTIFACT_NAME}"
+          fi
+          mkdir -p /tmp/artifact
+          aws s3 cp "${source}" "/tmp/artifact/${ARTIFACT_NAME}"
+
+      - name: Fail when artifact download has no fallback
+        if: ${{ inputs.artifact_name != '' && steps.download_artifact.outcome == 'failure' && inputs.artifact_s3_bucket == '' }}
+        run: |
+          echo "::error::GitHub artifact download failed and artifact_s3_bucket was not provided."
+          exit 1
 
       - name: Run sec tool against artifact
         if: ${{ inputs.artifact_name != '' }}
