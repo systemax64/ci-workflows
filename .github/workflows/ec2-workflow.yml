@@ -40,10 +40,15 @@ on:
         required: true
         default: ''
       build_args:
-        description: "Optional build arguments to pass to the build tool (e.g., node_version)."
+        description: "Optional build arguments to pass to the build tool (e.g., node_version, install_args)."
         type: string
         required: false
         default: "{}"
+      runner_architecture:
+        description: "Architecture for the build runner: x86 (ubuntu-latest) or arm64 (ubuntu-24.04-arm)."
+        type: string
+        required: false
+        default: 'x86'
       target_framework:
         type: string
         required: true
@@ -81,6 +86,15 @@ jobs:
     outputs:
       SSM_PREFIX: ${{ steps.target.outputs.ssm_prefix }}
     steps:
+      - name: Validate runner architecture
+        env:
+          RUNNER_ARCHITECTURE: ${{ inputs.runner_architecture }}
+        run: |
+          if [[ "$RUNNER_ARCHITECTURE" != "x86" && "$RUNNER_ARCHITECTURE" != "arm64" ]]; then
+            echo "::error::runner_architecture must be either 'x86' or 'arm64'."
+            exit 1
+          fi
+
       - name: Configure aws credentials
         uses: aws-actions/configure-aws-credentials@v6.2.4
         with:
@@ -104,7 +118,7 @@ jobs:
           echo "ssm_prefix=/$APP_SSM_PREFIX/${{ inputs.environment }}/${{ inputs.app }}" >> $GITHUB_OUTPUT
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner_architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - init
     permissions:
