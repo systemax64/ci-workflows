@@ -7,7 +7,7 @@ inputs:
     description: The build tool to use for building the application (e.g., 'npm', 'maven', etc.). Currently, only 'npm' is supported.
     required: true
   build_args:
-    description: "Optional build arguments to pass to the build tool (e.g., node_version)."
+    description: "Optional build arguments to pass to the build tool (e.g., node_version, install_args)."
     required: false
     default: "{}"
 
@@ -33,6 +33,7 @@ runs:
 
         if [[ "${{ inputs.build_tool }}" == "npm" ]]; then
           NODE_VERSION=$(echo $BUILD_ARGS | jq -r '.node_version')
+          INSTALL_ARGS=$(echo $BUILD_ARGS | jq -r '.install_args // ""')
           if [[ -z "$NODE_VERSION" ]]; then
             echo "::warning:: Node.js version not specified in build_args. Defaulting to the latest available version."
             echo "node_version=''" >> $GITHUB_OUTPUT
@@ -40,6 +41,7 @@ runs:
             echo "[DEBUG] Resolved Node.js version: $NODE_VERSION"
             echo "node_version=$NODE_VERSION" >> $GITHUB_OUTPUT
           fi
+          echo "install_args=$INSTALL_ARGS" >> $GITHUB_OUTPUT
         fi
 
         if [[ "${{ inputs.build_tool }}" == "pip" ]]; then
@@ -63,7 +65,7 @@ runs:
     - name: Install node modules
       if: ${{ inputs.build_tool == 'npm' }}
       shell: bash
-      run: npm install
+      run: npm install ${{ steps.prepare.outputs.install_args }}
     - name: Build
       shell: bash
       if: ${{ inputs.build_tool == 'npm' }}
